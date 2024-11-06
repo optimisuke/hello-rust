@@ -1,3 +1,4 @@
+use actix_cors::Cors;
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
@@ -16,6 +17,12 @@ struct Todo {
 struct CreateTodo {
     title: String,
 }
+// Updateのリクエスト用
+#[derive(Deserialize)]
+struct UpdateTodo {
+    title: String,
+    completed: bool,
+}
 
 // データベース接続の設定
 async fn get_db_pool() -> SqlitePool {
@@ -23,7 +30,6 @@ async fn get_db_pool() -> SqlitePool {
     SqlitePool::connect(&database_url).await.unwrap()
 }
 
-// Todoを全て取得
 // Todoを全て取得
 async fn get_todos(pool: web::Data<SqlitePool>) -> impl Responder {
     let todos = sqlx::query_as!(
@@ -44,6 +50,7 @@ async fn create_todo(
 ) -> impl Responder {
     let new_id = Uuid::new_v4().to_string();
 
+    // データベースに新しいTodoを挿入
     sqlx::query!(
         "INSERT INTO todos (id, title, completed) VALUES (?, ?, ?)",
         new_id,
@@ -54,20 +61,29 @@ async fn create_todo(
     .await
     .unwrap();
 
-    HttpResponse::Created().body(format!("Created todo with id: {}", new_id))
+    // 新しく作成されたTodoを作成して返す
+    let new_todo = Todo {
+        id: new_id.clone(),
+        title: todo_data.title.clone(),
+        completed: false,
+    };
+
+    // JSONレスポンスとして新しいTodoを返す
+    HttpResponse::Created().json(new_todo)
 }
 
 // Todoの更新処理
 async fn update_todo(
     pool: web::Data<SqlitePool>,
     todo_id: web::Path<String>,
-    todo_data: web::Json<CreateTodo>,
+    todo_data: web::Json<UpdateTodo>,
 ) -> impl Responder {
-    let id = todo_id.into_inner(); // 一時的な値を変数に保持
+    let id = todo_id.into_inner();
     sqlx::query!(
-        "UPDATE todos SET title = ? WHERE id = ?",
+        "UPDATE todos SET title = ?, completed = ? WHERE id = ?",
         todo_data.title,
-        id, // 変数を使用
+        todo_data.completed,
+        id,
     )
     .execute(pool.get_ref())
     .await
@@ -78,7 +94,7 @@ async fn update_todo(
 
 // Todoの削除処理
 async fn delete_todo(pool: web::Data<SqlitePool>, todo_id: web::Path<String>) -> impl Responder {
-    let id = todo_id.into_inner(); // 一時的な値を変数に保持
+    let id = todo_id.into_inner();
     sqlx::query!("DELETE FROM todos WHERE id = ?", id)
         .execute(pool.get_ref())
         .await
@@ -94,6 +110,13 @@ async fn main() -> std::io::Result<()> {
 
     HttpServer::new(move || {
         App::new()
+            .wrap(
+                Cors::default()
+                    .allow_any_origin() // 必要に応じて変更
+                    .allow_any_method()
+                    .allow_any_header()
+                    .max_age(3600),
+            )
             .app_data(web::Data::new(pool.clone()))
             .route("/todos", web::get().to(get_todos))
             .route("/todos", web::post().to(create_todo))
