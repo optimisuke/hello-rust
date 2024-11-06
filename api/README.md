@@ -15,3 +15,8 @@ https://docs.rs/sqlx/latest/sqlx/macro.query.html#nullability-output-columns
 ```.env
 DATABASE_URL=sqlite://todos.db
 ```
+
+# point
+
+- CORS 用のミドルウェアもある
+- sqlx のクエリを使うとき、NOT NULL になり得ると型が曖昧になので、明示的な sql を書いて解決
